@@ -4,6 +4,14 @@ import whisper
 import os
 import re
 from urllib.parse import urlparse, parse_qs
+import subprocess
+
+def check_ffmpeg():
+    try:
+        subprocess.run(['ffmpeg', '-version'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return True
+    except Exception:
+        return False
 
 def extract_video_id(url):
     """
@@ -50,6 +58,9 @@ def download_audio(video_url, output_dir='audios', filename='audio.mp3'):
         video_url (str): La URL completa del video de YouTube.
         output_dir (str): Directorio donde se guardará el audio.
         filename (str): Nombre del archivo de audio.
+
+    Retorna:
+        tuple: (bool, str) indicando éxito y mensaje.
     """
     os.makedirs(output_dir, exist_ok=True)
     ydl_opts = {
@@ -64,8 +75,14 @@ def download_audio(video_url, output_dir='audios', filename='audio.mp3'):
         'no_warnings': True,
     }
     
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([video_url])
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([video_url])
+        return True, "Audio descargado correctamente."
+    except yt_dlp.utils.DownloadError as e:
+        return False, f"Error durante la descarga del audio: {e}"
+    except Exception as e:
+        return False, f"Error inesperado: {e}"
 
 def transcribe_audio(audio_path, model_name='base', language='es'):
     """
@@ -94,13 +111,25 @@ def main():
     st.title("Transcriptor de Videos de YouTube 🎥📝")
     st.write("Ingresa el enlace de un video de YouTube y obtén la transcripción del audio.")
     
+    # Verificar si FFmpeg está instalado
+    if not check_ffmpeg():
+        st.error("FFmpeg no está instalado o no es accesible. Asegúrate de que FFmpeg esté instalado correctamente.")
+        return
+    
     # Entrada del usuario
     youtube_url = st.text_input("URL de YouTube:", "")
     
     # Selección del idioma
     language = st.selectbox(
         "Selecciona el idioma del audio:",
-        ("es", "en", "fr", "de", "it", "pt", "ru", "ja", "ko", "zh")
+        (
+            "es", "en", "fr", "de", "it", "pt", "ru", "ja", "ko", "zh",
+            "af", "ar", "be", "bg", "bn", "ca", "cs", "cy", "da",
+            "el", "et", "fa", "fi", "gu", "hi", "hr", "hu", "id",
+            "kn", "lt", "lv", "mk", "ml", "mr", "nl", "no", "pl",
+            "ro", "sk", "sl", "so", "sq", "sv", "sw", "ta", "te",
+            "th", "tr", "uk", "ur", "vi"
+        )
     )
     
     # Selección del modelo Whisper
@@ -121,13 +150,16 @@ def main():
                 # Descargar el audio
                 with st.spinner("Descargando el audio..."):
                     audio_filename = f"{video_id}.mp3"
-                    download_audio(youtube_url, output_dir='audios', filename=audio_filename)
+                    success, message = download_audio(youtube_url, output_dir='audios', filename=audio_filename)
+                    if success:
+                        st.success(message)
+                    else:
+                        st.error(message)
+                        return  # Salir si hay error en la descarga
                 
                 audio_path = os.path.join('audios', audio_filename)
                 
                 if os.path.exists(audio_path):
-                    st.success("Audio descargado correctamente.")
-                    
                     # Transcribir el audio
                     with st.spinner("Transcribiendo el audio..."):
                         transcription = transcribe_audio(audio_path, model_name=model_name, language=language)
@@ -137,7 +169,7 @@ def main():
                         st.subheader("Transcripción:")
                         st.write(transcription)
                         
-                        # Descargar la transcripción como archivo de texto
+                        # Descargar la transcripción como archivo de texto (opcional)
                         st.download_button(
                             label="Descargar Transcripción",
                             data=transcription,
@@ -155,4 +187,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
